@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SentimentGuard — 情绪驱动交易守卫</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #04060F;
+  --bg2: #080B18;
+  --border: rgba(255,255,255,0.06);
+  --fear: #FF3D6E;
+  --fearA: rgba(255,61,110,0.2);
+  --greed: #00FFB2;
+  --greedA: rgba(0,255,178,0.2);
+  --neutral: #FFB800;
+  --neutralA: rgba(255,184,0,0.2);
+  --okx: #00C8FF;
+  --okxA: rgba(0,200,255,0.15);
+  --text: #D8E4F0;
+  --dim: rgba(216,228,240,0.38);
+  --panel: rgba(255,255,255,0.025);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans SC',sans-serif}
+
+/* animated bg */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(ellipse at 10% 20%, rgba(255,61,110,0.07) 0%,transparent 50%),
+    radial-gradient(ellipse at 90% 80%, rgba(0,255,178,0.06) 0%,transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(0,200,255,0.04) 0%,transparent 60%);
+  animation: bgPulse 8s ease-in-out infinite alternate;
+}
+@keyframes bgPulse{
+  from{opacity:.7} to{opacity:1}
+}
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,0.018) 1px,transparent 1px);
+  background-size:40px 40px;
+}
+
+/* HEADER */
+header{
+  position:relative;z-index:10;height:54px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;
+  border-bottom:1px solid var(--border);
+  background:rgba(4,6,15,0.95);backdrop-filter:blur(20px);
+}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{
+  width:34px;height:34px;position:relative;
+  display:flex;align-items:center;justify-content:center;
+}
+.logo-icon::before{
+  content:'';position:absolute;inset:0;
+  border:1.5px solid var(--fear);border-radius:50%;
+  box-shadow:0 0 12px var(--fearA);
+  animation:iconSpin 6s linear infinite;
+}
+.logo-icon::after{
+  content:'';position:absolute;inset:4px;
+  border:1.5px solid var(--greed);border-radius:50%;
+  box-shadow:0 0 8px var(--greedA);
+  animation:iconSpin 4s linear infinite reverse;
+}
+@keyframes iconSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.logo-core{
+  width:8px;height:8px;background:var(--okx);border-radius:50%;
+  box-shadow:0 0 10px var(--okx);position:relative;z-index:1;
+  animation:corePulse 2s ease-in-out infinite;
+}
+@keyframes corePulse{0%,100%{box-shadow:0 0 6px var(--okx)}50%{box-shadow:0 0 18px var(--okx),0 0 30px var(--okxA)}}
+.logo-text{font-family:'Orbitron',monospace;font-size:15px;font-weight:700;color:#fff;letter-spacing:1px}
+.logo-sub{font-size:8px;color:var(--dim);letter-spacing:3px;font-family:'JetBrains Mono',monospace;margin-top:1px}
+
+.h-center{display:flex;align-items:center;gap:8px}
+/* global sentiment pill */
+.gscore{
+  display:flex;align-items:center;gap:10px;
+  padding:6px 16px;border-radius:4px;
+  background:rgba(255,61,110,0.1);border:1px solid rgba(255,61,110,0.3);
+  font-family:'JetBrains Mono',monospace;
+}
+.gs-label{font-size:9px;color:var(--dim);letter-spacing:2px}
+.gs-val{font-size:20px;font-weight:700;color:var(--fear);font-family:'Orbitron',monospace;line-height:1;text-shadow:0 0 15px var(--fearA)}
+.gs-name{font-size:10px;color:var(--fear);letter-spacing:1px}
+.gs-arrow{font-size:14px;color:var(--fear);animation:arrowBlink .8s ease-in-out infinite}
+@keyframes arrowBlink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.hright{display:flex;align-items:center;gap:10px}
+.status-pill{
+  display:flex;align-items:center;gap:5px;
+  padding:4px 11px;background:rgba(0,255,178,0.07);
+  border:1px solid rgba(0,255,178,0.2);border-radius:20px;
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--greed);
+}
+.sdot{width:5px;height:5px;background:var(--greed);border-radius:50%;animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
+.okxbtn{
+  padding:6px 15px;background:var(--okx);border:none;border-radius:4px;
+  color:#000;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;
+  cursor:pointer;letter-spacing:1px;box-shadow:0 0 14px var(--okxA);transition:all .2s;
+}
+.okxbtn:hover{box-shadow:0 0 24px rgba(0,200,255,0.4);transform:translateY(-1px)}
+
+/* ALERT BANNER */
+.alert-banner{
+  position:relative;z-index:9;
+  padding:9px 24px;
+  background:rgba(255,61,110,0.08);
+  border-bottom:1px solid rgba(255,61,110,0.2);
+  display:flex;align-items:center;gap:14px;
+  animation:alertPulse 2s ease-in-out infinite;
+}
+@keyframes alertPulse{0%,100%{background:rgba(255,61,110,0.08)}50%{background:rgba(255,61,110,0.14)}}
+.alert-icon{font-size:14px;animation:arrowBlink .6s ease-in-out infinite}
+.alert-text{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fear);flex:1}
+.alert-text span{color:#fff;font-weight:700}
+.alert-action{
+  padding:5px 14px;background:var(--fear);border:none;border-radius:3px;
+  color:#fff;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+  cursor:pointer;letter-spacing:1px;transition:all .2s;animation:btnGlow 2s ease-in-out infinite;
+}
+@keyframes btnGlow{0%,100%{box-shadow:0 0 8px var(--fearA)}50%{box-shadow:0 0 20px rgba(255,61,110,0.5)}}
+
+/* MAIN GRID */
+.main{
+  position:relative;z-index:1;
+  display:grid;
+  grid-template-columns:220px 1fr 260px;
+  grid-template-rows:1fr;
+  height:calc(100vh - 54px - 46px);
+  gap:0;
+}
+
+/* LEFT PANEL — 四维数据源 */
+.left-panel{
+  border-right:1px solid var(--border);
+  background:rgba(4,6,15,0.6);backdrop-filter:blur(16px);
+  overflow-y:auto;scrollbar-width:none;padding:14px;
+  display:flex;flex-direction:column;gap:10px;
+}
+.left-panel::-webkit-scrollbar{display:none}
+
+.sec-title{
+  font-family:'JetBrains Mono',monospace;font-size:8px;
+  letter-spacing:3px;color:var(--dim);text-transform:uppercase;
+  margin-bottom:6px;display:flex;align-items:center;gap:6px;
+}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* source card */
+.src-card{
+  background:var(--panel);border-radius:6px;padding:10px;
+  border:1px solid var(--border);transition:border-color .2s;
+}
+.src-card:hover{border-color:rgba(255,255,255,0.12)}
+.src-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.src-name{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text);display:flex;align-items:center;gap:5px}
+.src-dot{width:6px;height:6px;border-radius:50%}
+.src-score-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.src-score{font-family:'Orbitron',monospace;font-size:16px;font-weight:700;line-height:1}
+.src-label{font-family:'JetBrains Mono',monospace;font-size:8px}
+/* mini bar */
+.mini-bar-wrap{height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-bottom:6px}
+.mini-bar{height:100%;border-radius:2px;transition:width 1s ease}
+.src-detail{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);line-height:1.5}
+/* weight badge */
+.weight{
+  display:inline-block;padding:1px 5px;border-radius:2px;
+  font-family:'JetBrains Mono',monospace;font-size:8px;
+  background:rgba(0,200,255,0.1);color:var(--okx);border:1px solid rgba(0,200,255,0.15);
+  margin-top:4px;
+}
+
+/* CENTER — 主仪表盘 */
+.center{
+  display:flex;flex-direction:column;
+  overflow:hidden;padding:16px 20px;gap:14px;
+}
+
+/* big gauge */
+.gauge-wrap{
+  display:flex;align-items:center;justify-content:center;
+  position:relative;flex-shrink:0;
+}
+#gaugeCanvas{display:block}
+
+/* sentiment timeline */
+.timeline-section{flex:1;min-height:0}
+.timeline-label{
+  font-family:'JetBrains Mono',monospace;font-size:8px;
+  letter-spacing:3px;color:var(--dim);margin-bottom:8px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+#timelineCanvas{width:100%;display:block}
+
+/* threshold settings */
+.threshold-bar{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;
+  background:var(--panel);border:1px solid var(--border);border-radius:6px;
+  flex-shrink:0;
+}
+.th-label{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);flex-shrink:0}
+.th-group{display:flex;align-items:center;gap:8px;flex:1}
+.th-item{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:9px}
+.th-item input[type=range]{
+  width:80px;height:3px;-webkit-appearance:none;background:rgba(255,255,255,0.1);border-radius:2px;cursor:pointer;
+}
+.th-item input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:10px;height:10px;border-radius:50%;cursor:pointer;
+}
+.th-fear input::-webkit-slider-thumb{background:var(--fear)}
+.th-greed input::-webkit-slider-thumb{background:var(--greed)}
+.th-val{font-weight:700;min-width:24px;text-align:right}
+
+/* RIGHT PANEL — 信号记录 & 挂单建议 */
+.right-panel{
+  border-left:1px solid var(--border);
+  background:rgba(4,6,15,0.6);backdrop-filter:blur(16px);
+  overflow-y:auto;scrollbar-width:none;padding:14px;
+  display:flex;flex-direction:column;gap:12px;
+}
+.right-panel::-webkit-scrollbar{display:none}
+
+/* order suggestion card */
+.order-card{
+  background:rgba(255,61,110,0.06);
+  border:1px solid rgba(255,61,110,0.25);
+  border-radius:8px;padding:12px;
+}
+.oc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.oc-title{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fear);letter-spacing:1px;display:flex;align-items:center;gap:5px}
+.oc-badge{padding:2px 7px;background:rgba(255,61,110,0.15);border:1px solid rgba(255,61,110,0.3);border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--fear)}
+.oc-row{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;margin-bottom:5px;color:var(--dim)}
+.oc-row span:last-child{color:var(--text)}
+.oc-divider{height:1px;background:var(--border);margin:8px 0}
+.oc-reason{font-size:10px;color:var(--dim);line-height:1.5;margin-bottom:10px;font-family:'JetBrains Mono',monospace}
+.oc-reason em{color:var(--fear);font-style:normal}
+.oc-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.oc-confirm{
+  padding:7px;background:var(--fear);border:none;border-radius:4px;
+  color:#fff;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;
+  cursor:pointer;letter-spacing:1px;transition:all .2s;
+}
+.oc-confirm:hover{filter:brightness(1.1)}
+.oc-skip{
+  padding:7px;background:transparent;border:1px solid var(--border);border-radius:4px;
+  color:var(--dim);font-family:'JetBrains Mono',monospace;font-size:9px;
+  cursor:pointer;transition:all .2s;
+}
+.oc-skip:hover{border-color:rgba(255,255,255,0.15);color:var(--text)}
+
+/* signal history */
+.sig-item{
+  display:flex;align-items:flex-start;gap:8px;
+  padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.03);
+}
+.sig-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:3px}
+.sig-body{flex:1}
+.sig-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.sig-name{font-family:'JetBrains Mono',monospace;font-size:10px}
+.sig-time{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--dim)}
+.sig-desc{font-size:9px;color:var(--dim);line-height:1.4;font-family:'JetBrains Mono',monospace}
+.sig-result{
+  display:inline-block;margin-top:3px;padding:1px 6px;border-radius:2px;
+  font-family:'JetBrains Mono',monospace;font-size:8px;
+}
+
+/* OpenClaw status bottom */
+.oc-status{
+  margin-top:auto;padding:10px;
+  background:var(--panel);border:1px solid var(--border);border-radius:6px;
+}
+.ocs-row{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:9px;margin-bottom:5px}
+.ocs-row:last-child{margin-bottom:0;padding-top:5px;border-top:1px solid var(--border)}
+
+/* modal overlay */
+.modal-overlay{
+  position:fixed;inset:0;z-index:200;
+  background:rgba(4,6,15,0.9);backdrop-filter:blur(12px);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+.modal-overlay.on{opacity:1;pointer-events:all}
+.modal{
+  background:#06091A;border:1px solid rgba(0,200,255,0.25);border-radius:12px;
+  padding:22px;width:440px;max-height:90vh;overflow-y:auto;scrollbar-width:none;
+  box-shadow:0 0 50px rgba(0,200,255,0.1),0 0 0 1px rgba(255,255,255,0.04);
+}
+.modal::-webkit-scrollbar{display:none}
+/* confirm screen */
+.modal-title{font-family:'Orbitron',monospace;font-size:13px;color:var(--okx);margin-bottom:4px;display:flex;align-items:center;gap:8px;letter-spacing:.5px}
+.modal-subtitle{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--dim);letter-spacing:2px;margin-bottom:14px}
+.modal-params{background:rgba(0,200,255,0.03);border:1px solid rgba(0,200,255,0.1);border-radius:6px;padding:10px;margin-bottom:10px}
+.modal-row{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;margin-bottom:5px}
+.modal-row:last-child{margin-bottom:0}
+.modal-row span:first-child{color:var(--dim)}
+.modal-row span:last-child{color:var(--text);font-weight:700}
+.atk-preview{margin-bottom:10px}
+.atk-preview-title{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--dim);letter-spacing:2px;margin-bottom:7px;text-transform:uppercase}
+.atk-step-pre{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);margin-bottom:4px}
+.step-num{width:16px;height:16px;border-radius:50%;background:rgba(0,200,255,0.1);border:1px solid rgba(0,200,255,0.2);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--okx);flex-shrink:0}
+.step-txt{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);flex:1}
+.step-tool{font-family:'JetBrains Mono',monospace;font-size:8px;color:rgba(0,200,255,0.5);padding:1px 5px;background:rgba(0,200,255,0.06);border-radius:2px;white-space:nowrap}
+.modal-warn{margin-bottom:10px;padding:8px 10px;background:rgba(255,184,0,0.05);border:1px solid rgba(255,184,0,0.15);border-radius:5px;font-family:'JetBrains Mono',monospace;font-size:9px;color:rgba(255,184,0,0.65);line-height:1.6}
+.modal-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.modal-confirm-btn{padding:10px;background:var(--okx);border:none;border-radius:5px;color:#000;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:1px;box-shadow:0 0 14px var(--okxA)}
+.modal-cancel-btn{padding:10px;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--dim);font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer}
+/* exec screen */
+.modal-exec-screen{display:none}
+.exec-title{font-family:'Orbitron',monospace;font-size:13px;color:var(--okx);margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.exec-sub{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--dim);margin-bottom:16px;letter-spacing:1px}
+.exec-step{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:6px;margin-bottom:6px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);transition:all .4s}
+.exec-step.active{background:rgba(0,200,255,0.05);border-color:rgba(0,200,255,0.2)}
+.exec-step.done{background:rgba(0,255,178,0.04);border-color:rgba(0,255,178,0.18)}
+.estep-icon{width:22px;height:22px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;background:rgba(255,255,255,0.04);margin-top:1px;transition:all .4s}
+.exec-step.active .estep-icon{background:rgba(0,200,255,0.12);animation:iconSpin 1s linear infinite}
+.exec-step.done .estep-icon{background:rgba(0,255,178,0.12)}
+.estep-body{flex:1}
+.estep-name{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);margin-bottom:2px;transition:color .4s}
+.exec-step.active .estep-name{color:var(--okx)}
+.exec-step.done .estep-name{color:var(--greed)}
+.estep-detail{font-family:'JetBrains Mono',monospace;font-size:9px;color:rgba(216,228,240,0.2);line-height:1.5;transition:color .4s}
+.exec-step.active .estep-detail,.exec-step.done .estep-detail{color:var(--dim)}
+.etag{display:inline-block;padding:1px 6px;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:8px;margin-top:3px}
+.etag-atk{background:rgba(0,200,255,0.08);color:var(--okx);border:1px solid rgba(0,200,255,0.15)}
+.etag-done{background:rgba(0,255,178,0.08);color:var(--greed);border:1px solid rgba(0,255,178,0.15)}
+.etag-wait{background:rgba(255,255,255,0.03);color:var(--dim);border:1px solid rgba(255,255,255,0.07)}
+.exec-result{margin-top:12px;padding:12px;background:rgba(0,255,178,0.05);border:1px solid rgba(0,255,178,0.18);border-radius:6px;display:none}
+.exec-result.on{display:block}
+.result-title{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--greed);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.result-row{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:9px;margin-bottom:4px}
+.result-row span:first-child{color:var(--dim)}
+.result-row span:last-child{color:var(--text)}
+.result-close{width:100%;margin-top:10px;padding:8px;background:rgba(0,255,178,0.08);border:1px solid rgba(0,255,178,0.25);border-radius:4px;color:var(--greed);font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;letter-spacing:1px}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon"><div class="logo-core"></div></div>
+    <div>
+      <div class="logo-text">SentimentGuard</div>
+      <div class="logo-sub">情绪驱动交易守卫 · Powered by OpenClaw + OKX ATK</div>
+    </div>
+  </div>
+  <div class="h-center">
+    <div class="gscore">
+      <div>
+        <div class="gs-label">综合情绪指数</div>
+        <div style="display:flex;align-items:baseline;gap:6px">
+          <div class="gs-val" id="mainScore">18</div>
+          <div class="gs-arrow">↓</div>
+        </div>
+      </div>
+      <div>
+        <div class="gs-name" id="mainName">极度恐慌</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--dim);margin-top:2px">触发阈值: ≤20</div>
+      </div>
+    </div>
+  </div>
+  <div class="hright">
+    <div class="status-pill"><div class="sdot"></div>4源实时监控中</div>
+    <button class="okxbtn" onclick="window.open('https://www.okx.com/web3','_blank')">⚡ OKX Agent Trade Kit</button>
+  </div>
+</header>
+
+<!-- ALERT BANNER -->
+<div class="alert-banner">
+  <div class="alert-icon">🚨</div>
+  <div class="alert-text">
+    <span>极度恐慌信号触发</span> — 综合情绪指数跌至 <span>18</span>，四维数据交叉确认 · 历史回测：此区间建仓 <span>胜率 73%</span> · BTC当前 <span>$61,240</span>
+  </div>
+  <button class="alert-action" onclick="showModal()">查看挂单建议 →</button>
+</div>
+
+<div class="main">
+
+  <!-- LEFT: 四维数据源 -->
+  <div class="left-panel">
+    <div class="sec-title">四维情绪数据源</div>
+
+    <!-- Fear & Greed -->
+    <div class="src-card">
+      <div class="src-header">
+        <div class="src-name"><div class="src-dot" style="background:var(--fear)"></div>恐慌贪婪指数</div>
+        <div class="src-score-wrap">
+          <div class="src-score" style="color:var(--fear)">16</div>
+          <div class="src-label" style="color:var(--fear)">极度恐慌</div>
+        </div>
+      </div>
+      <div class="mini-bar-wrap"><div class="mini-bar" style="width:16%;background:var(--fear)"></div></div>
+      <div class="src-detail">Alternative.me · 每日更新<br>历史最低: 5 · 最高: 98</div>
+      <div class="weight">权重 35%</div>
+    </div>
+
+    <!-- X情绪 -->
+    <div class="src-card">
+      <div class="src-header">
+        <div class="src-name"><div class="src-dot" style="background:#1DA1F2"></div>X全网情绪</div>
+        <div class="src-score-wrap">
+          <div class="src-score" style="color:var(--fear)">22</div>
+          <div class="src-label" style="color:var(--fear)">偏空</div>
+        </div>
+      </div>
+      <div class="mini-bar-wrap"><div class="mini-bar" style="width:22%;background:#1DA1F2"></div></div>
+      <div class="src-detail">OpenClaw 6551协议<br>过去1h采集 2,847条推文<br>负面情绪占比 78%</div>
+      <div class="weight">权重 30%</div>
+    </div>
+
+    <!-- 资金费率 -->
+    <div class="src-card">
+      <div class="src-header">
+        <div class="src-name"><div class="src-dot" style="background:var(--greed)"></div>资金费率</div>
+        <div class="src-score-wrap">
+          <div class="src-score" style="color:var(--greed)">+</div>
+          <div class="src-label" style="color:var(--dim)">-0.023%</div>
+        </div>
+      </div>
+      <div class="mini-bar-wrap"><div class="mini-bar" style="width:30%;background:linear-gradient(90deg,var(--fear),var(--greed))"></div></div>
+      <div class="src-detail">OKX Agent Trade Kit<br>BTC现货市场资金流向<br>负费率 → 买方意愿强</div>
+      <div class="weight">权重 20%</div>
+    </div>
+
+    <!-- 大额清算 -->
+    <div class="src-card">
+      <div class="src-header">
+        <div class="src-name"><div class="src-dot" style="background:var(--neutral)"></div>大额清算</div>
+        <div class="src-score-wrap">
+          <div class="src-score" style="color:var(--neutral)">↑</div>
+          <div class="src-label" style="color:var(--neutral)">$480M</div>
+        </div>
+      </div>
+      <div class="mini-bar-wrap"><div class="mini-bar" style="width:75%;background:var(--neutral)"></div></div>
+      <div class="src-detail">过去24h全网清算<br>买入 $312M 卖出 $168M<br>大额卖出 → 恐慌加剧</div>
+      <div class="weight">权重 15%</div>
+    </div>
+
+    <div class="sec-title" style="margin-top:4px">历史胜率</div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:10px">
+      <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:9px;margin-bottom:5px">
+        <span style="color:var(--dim)">指数≤20区间建仓</span><span style="color:var(--greed);font-weight:700">73%</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:9px;margin-bottom:5px">
+        <span style="color:var(--dim)">指数≥80区间卖出</span><span style="color:var(--greed);font-weight:700">68%</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:9px">
+        <span style="color:var(--dim)">样本数据</span><span style="color:var(--dim)">2019-2025</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER: 主仪表盘 -->
+  <div class="center">
+
+    <div class="gauge-wrap">
+      <canvas id="gaugeCanvas" width="420" height="220"></canvas>
+    </div>
+
+    <div class="timeline-section">
+      <div class="timeline-label">
+        <span>7日情绪走势</span>
+        <span style="color:var(--dim)">灰色虚线 = 触发阈值</span>
+      </div>
+      <canvas id="timelineCanvas" height="90"></canvas>
+    </div>
+
+    <div class="threshold-bar">
+      <div class="th-label">触发阈值设置</div>
+      <div class="th-group">
+        <div class="th-item th-fear">
+          <span style="color:var(--fear)">恐慌 ≤</span>
+          <input type="range" min="5" max="35" value="20" oninput="updateThreshold('fear',this.value)">
+          <span class="th-val" style="color:var(--fear)" id="fearTh">20</span>
+        </div>
+        <div style="width:1px;height:20px;background:var(--border)"></div>
+        <div class="th-item th-greed">
+          <span style="color:var(--greed)">贪婪 ≥</span>
+          <input type="range" min="65" max="95" value="80" oninput="updateThreshold('greed',this.value)">
+          <span class="th-val" style="color:var(--greed)" id="greedTh">80</span>
+        </div>
+        <div style="width:1px;height:20px;background:var(--border)"></div>
+        <div class="th-item" style="gap:5px">
+          <span style="color:var(--dim);font-family:'JetBrains Mono',monospace;font-size:9px">交叉确认</span>
+          <select style="background:#0D1020;border:1px solid var(--border);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 5px;border-radius:3px">
+            <option>2源以上</option>
+            <option>3源以上</option>
+            <option>4源全部</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: 信号&挂单建议 -->
+  <div class="right-panel">
+
+    <div>
+      <div class="sec-title">🎯 当前挂单建议</div>
+      <div class="order-card">
+        <div class="oc-header">
+          <div class="oc-title">🔴 建议买入 BTC/USDT</div>
+          <div class="oc-badge">极度恐慌</div>
+        </div>
+        <div class="oc-row"><span>交易对</span><span>BTC/USDT 现货</span></div>
+        <div class="oc-row"><span>建议入场</span><span style="color:var(--greed)">$60,800</span></div>
+        <div class="oc-row"><span>止损价</span><span style="color:var(--fear)">$58,500</span></div>
+        <div class="oc-row"><span>目标价</span><span style="color:var(--greed)">$66,000</span></div>
+        <div class="oc-row"><span>建议仓位</span><span>≤ 10% 总资金</span></div>
+        <div class="oc-divider"></div>
+        <div class="oc-reason">
+          四维信号交叉确认：恐慌指数 <em>16</em>，X负面情绪 <em>78%</em>，
+          资金费率 <em>-0.023%</em>，24h清算 <em>$480M</em>。
+          历史此区间 <em>73%胜率</em>，建议分批建仓。
+        </div>
+        <div class="oc-btns">
+          <button class="oc-confirm" onclick="showModal()">⚡ 一键确认挂单</button>
+          <button class="oc-skip">跳过此信号</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-title">📋 历史信号记录</div>
+
+      <div class="sig-item">
+        <div class="sig-dot" style="background:var(--greed)"></div>
+        <div class="sig-body">
+          <div class="sig-top">
+            <div class="sig-name" style="color:var(--greed)">极度贪婪 → 卖出</div>
+            <div class="sig-time">3天前</div>
+          </div>
+          <div class="sig-desc">指数92，BTC $71,200卖出 · 止损$73,500 · 目标$65,000</div>
+          <div class="sig-result" style="background:rgba(0,255,178,0.1);color:var(--greed)">✓ 已触发目标 +8.1%</div>
+        </div>
+      </div>
+
+      <div class="sig-item">
+        <div class="sig-dot" style="background:var(--fear)"></div>
+        <div class="sig-body">
+          <div class="sig-top">
+            <div class="sig-name" style="color:var(--fear)">极度恐慌 → 买入</div>
+            <div class="sig-time">9天前</div>
+          </div>
+          <div class="sig-desc">指数14，BTC $58,400买入 · 止损$56,000 · 目标$65,000</div>
+          <div class="sig-result" style="background:rgba(0,255,178,0.1);color:var(--greed)">✓ 已触发目标 +11.3%</div>
+        </div>
+      </div>
+
+      <div class="sig-item">
+        <div class="sig-dot" style="background:var(--neutral)"></div>
+        <div class="sig-body">
+          <div class="sig-top">
+            <div class="sig-name" style="color:var(--neutral)">贪婪 → 卖出</div>
+            <div class="sig-time">15天前</div>
+          </div>
+          <div class="sig-desc">指数78，BTC $68,900卖出 · 止损$71,000</div>
+          <div class="sig-result" style="background:rgba(255,61,110,0.1);color:var(--fear)">✗ 止损出场 -3.1%</div>
+        </div>
+      </div>
+
+      <div class="sig-item">
+        <div class="sig-dot" style="background:var(--fear)"></div>
+        <div class="sig-body">
+          <div class="sig-top">
+            <div class="sig-name" style="color:var(--fear)">极度恐慌 → 买入</div>
+            <div class="sig-time">22天前</div>
+          </div>
+          <div class="sig-desc">指数11，BTC $52,100买入 · 止损$49,500</div>
+          <div class="sig-result" style="background:rgba(0,255,178,0.1);color:var(--greed)">✓ 已触发目标 +15.6%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="oc-status">
+      <div class="sec-title" style="margin-bottom:8px">🦐 OpenClaw 状态</div>
+      <div class="ocs-row"><span style="color:var(--dim)">Fear & Greed API</span><span style="color:var(--greed)">● 正常</span></div>
+      <div class="ocs-row"><span style="color:var(--dim)">6551 X情绪采集</span><span style="color:var(--greed)">● 运行中</span></div>
+      <div class="ocs-row"><span style="color:var(--dim)">OKX ATK 资金费率</span><span style="color:var(--greed)">● 正常</span></div>
+      <div class="ocs-row"><span style="color:var(--dim)">清算数据源</span><span style="color:var(--greed)">● 正常</span></div>
+      <div class="ocs-row"><span style="color:var(--dim)">下次采集</span><span style="color:var(--okx)">14:58</span></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 确认挂单弹窗 -->
+<div class="modal-overlay" id="modalOverlay" onclick="hideModal(event)">
+  <div class="modal">
+
+    <!-- 第一屏：确认参数 -->
+    <div class="modal-confirm-screen" id="screenConfirm">
+      <div class="modal-title">⚡ OKX Agent Trade Kit 执行预览</div>
+      <div class="modal-subtitle">确认后将依次调用 ATK 工具完成挂单全流程</div>
+
+      <div class="modal-params">
+        <div class="modal-row"><span>交易对</span><span>BTC/USDT 现货</span></div>
+        <div class="modal-row"><span>方向</span><span style="color:var(--greed)">现货买入（限价单）</span></div>
+        <div class="modal-row"><span>挂单价格</span><span style="color:var(--greed)">$60,800</span></div>
+        <div class="modal-row"><span>止损价格</span><span style="color:var(--fear)">$58,500</span></div>
+        <div class="modal-row"><span>目标价格</span><span style="color:var(--greed)">$66,000</span></div>
+        <div class="modal-row"><span>触发依据</span><span>四维情绪交叉确认 · 指数18</span></div>
+      </div>
+
+      <div class="atk-preview">
+        <div class="atk-preview-title">ATK 将按顺序执行以下工具</div>
+        <div class="atk-step-pre"><div class="step-num">1</div><div class="step-txt">查询账户余额，计算可用仓位</div><div class="step-tool">get_balance</div></div>
+        <div class="atk-step-pre"><div class="step-num">2</div><div class="step-txt">查询当前持仓，避免重复建仓</div><div class="step-tool">get_positions</div></div>
+        <div class="atk-step-pre"><div class="step-num">3</div><div class="step-txt">提交限价买入单 $60,800</div><div class="step-tool">place_limit_order</div></div>
+        <div class="atk-step-pre"><div class="step-num">4</div><div class="step-txt">同步挂止损单 $58,500</div><div class="step-tool">place_stop_loss</div></div>
+        <div class="atk-step-pre"><div class="step-num">5</div><div class="step-txt">记录订单ID，监控成交状态</div><div class="step-tool">get_order_status</div></div>
+      </div>
+
+      <div class="modal-warn">⚠️ 情绪指标为辅助参考，不构成投资建议。建议单次仓位不超过总资金 10%。</div>
+
+      <div class="modal-btns">
+        <button class="modal-confirm-btn" onclick="startExec()">确认 · 启动 ATK 执行</button>
+        <button class="modal-cancel-btn" onclick="hideModal()">取消</button>
+      </div>
+    </div>
+
+    <!-- 第二屏：执行流程 -->
+    <div class="modal-exec-screen" id="screenExec">
+      <div class="exec-title"><span id="execSpinner">⟳</span> OKX ATK 执行中...</div>
+      <div class="exec-sub" id="execSubtitle">OpenClaw 正在调用 Agent Trade Kit 工具链</div>
+
+      <div class="exec-step" id="es1">
+        <div class="estep-icon">①</div>
+        <div class="estep-body">
+          <div class="estep-name">get_balance — 查询账户余额</div>
+          <div class="estep-detail">调用 ATK 获取 USDT 可用余额<br><span id="es1val"></span></div>
+          <span class="etag etag-wait" id="es1tag">等待中</span>
+        </div>
+      </div>
+      <div class="exec-step" id="es2">
+        <div class="estep-icon">②</div>
+        <div class="estep-body">
+          <div class="estep-name">get_positions — 查询当前持仓</div>
+          <div class="estep-detail">确认 BTC 当前无重复持仓<br><span id="es2val"></span></div>
+          <span class="etag etag-wait" id="es2tag">等待中</span>
+        </div>
+      </div>
+      <div class="exec-step" id="es3">
+        <div class="estep-icon">③</div>
+        <div class="estep-body">
+          <div class="estep-name">place_limit_order — 提交限价买入单</div>
+          <div class="estep-detail">BTC/USDT 现货 · 限价 $60,800<br><span id="es3val"></span></div>
+          <span class="etag etag-wait" id="es3tag">等待中</span>
+        </div>
+      </div>
+      <div class="exec-step" id="es4">
+        <div class="estep-icon">④</div>
+        <div class="estep-body">
+          <div class="estep-name">place_stop_loss — 挂止损保护单</div>
+          <div class="estep-detail">触发价 $58,500 · 市价止损<br><span id="es4val"></span></div>
+          <span class="etag etag-wait" id="es4tag">等待中</span>
+        </div>
+      </div>
+      <div class="exec-step" id="es5">
+        <div class="estep-icon">⑤</div>
+        <div class="estep-body">
+          <div class="estep-name">get_order_status — 确认订单状态</div>
+          <div class="estep-detail">验证两笔订单均已挂单成功<br><span id="es5val"></span></div>
+          <span class="etag etag-wait" id="es5tag">等待中</span>
+        </div>
+      </div>
+
+      <div class="exec-result" id="execResult">
+        <div class="result-title">✓ ATK 执行完成</div>
+        <div class="result-row"><span>限价买入单</span><span style="color:var(--greed)">已挂单 · ID #847291</span></div>
+        <div class="result-row"><span>止损保护单</span><span style="color:var(--greed)">已挂单 · ID #847292</span></div>
+        <div class="result-row"><span>建议仓位</span><span>$6,120 (余额10%)</span></div>
+        <div class="result-row"><span>预计盈亏比</span><span style="color:var(--greed)">1 : 2.3</span></div>
+        <button class="result-close" onclick="hideModal()">✓ 完成，关闭窗口</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── GAUGE ─────────────────────────────────────────────────────
+const gc = document.getElementById('gaugeCanvas');
+const gx = gc.getContext('2d');
+const score = 18;
+
+function drawGauge() {
+  const cx = gc.width/2, cy = gc.height - 20;
+  const R = 155, r = 100;
+  gx.clearRect(0,0,gc.width,gc.height);
+
+  // track segments: fear(red) → neutral(yellow) → greed(green)
+  const segs = [
+    {from:Math.PI, to:Math.PI*1.2, color:'#FF3D6E'},
+    {from:Math.PI*1.2, to:Math.PI*1.4, color:'#FF6B35'},
+    {from:Math.PI*1.4, to:Math.PI*1.6, color:'#FFB800'},
+    {from:Math.PI*1.6, to:Math.PI*1.8, color:'#7BC67E'},
+    {from:Math.PI*1.8, to:Math.PI*2, color:'#00FFB2'},
+  ];
+  segs.forEach(s => {
+    gx.beginPath();gx.arc(cx,cy,R,s.from,s.to);gx.arc(cx,cy,r,s.to,s.from,true);
+    gx.closePath();gx.fillStyle=s.color+'33';gx.fill();
+    gx.beginPath();gx.arc(cx,cy,R,s.from,s.to);
+    gx.strokeStyle=s.color+'88';gx.lineWidth=1;gx.stroke();
+  });
+
+  // active fill
+  const pct = score/100;
+  const angle = Math.PI + pct*Math.PI;
+  const grad = gx.createLinearGradient(cx-R,cy,cx+R,cy);
+  grad.addColorStop(0,'#FF3D6E');grad.addColorStop(.5,'#FFB800');grad.addColorStop(1,'#00FFB2');
+  gx.beginPath();gx.arc(cx,cy,R,Math.PI,angle);gx.arc(cx,cy,r,angle,Math.PI,true);
+  gx.closePath();gx.fillStyle=grad;gx.globalAlpha=.35;gx.fill();gx.globalAlpha=1;
+
+  // glow arc
+  gx.beginPath();gx.arc(cx,cy,(R+r)/2,Math.PI,angle);
+  gx.strokeStyle='#FF3D6E';gx.lineWidth=2;
+  gx.shadowColor='#FF3D6E';gx.shadowBlur=12;gx.stroke();
+  gx.shadowBlur=0;
+
+  // needle
+  const needleAngle = Math.PI + pct*Math.PI;
+  const nx = cx + (r+10)*Math.cos(needleAngle);
+  const ny = cy + (r+10)*Math.sin(needleAngle);
+  gx.beginPath();gx.moveTo(cx,cy);gx.lineTo(nx,ny);
+  gx.strokeStyle='#fff';gx.lineWidth=2;
+  gx.shadowColor='#fff';gx.shadowBlur=8;gx.stroke();gx.shadowBlur=0;
+
+  // center circle
+  gx.beginPath();gx.arc(cx,cy,10,0,Math.PI*2);
+  gx.fillStyle='#fff';gx.shadowColor='#fff';gx.shadowBlur=10;gx.fill();gx.shadowBlur=0;
+
+  // score text
+  gx.font='bold 48px Orbitron,monospace';
+  gx.fillStyle='#FF3D6E';gx.textAlign='center';gx.textBaseline='bottom';
+  gx.shadowColor='#FF3D6E';gx.shadowBlur=20;
+  gx.fillText(score, cx, cy-18);gx.shadowBlur=0;
+
+  gx.font='bold 14px "Noto Sans SC",sans-serif';
+  gx.fillStyle='#FF3D6E';gx.fillText('极度恐慌', cx, cy-2);
+
+  // labels
+  const labels=[{a:Math.PI,t:'0',c:'#FF3D6E'},{a:Math.PI*1.25,t:'25',c:'#FF6B35'},{a:Math.PI*1.5,t:'50',c:'#FFB800'},{a:Math.PI*1.75,t:'75',c:'#7BC67E'},{a:Math.PI*2,t:'100',c:'#00FFB2'}];
+  labels.forEach(l=>{
+    const lx=cx+(R+18)*Math.cos(l.a), ly=cy+(R+18)*Math.sin(l.a);
+    gx.font='bold 10px JetBrains Mono,monospace';
+    gx.fillStyle=l.c;gx.textAlign='center';gx.textBaseline='middle';
+    gx.fillText(l.t,lx,ly);
+  });
+
+  // section labels inside arc
+  const sLabels=[{a:Math.PI*1.1,t:'极度恐慌'},{a:Math.PI*1.3,t:'恐慌'},{a:Math.PI*1.5,t:'中性'},{a:Math.PI*1.7,t:'贪婪'},{a:Math.PI*1.9,t:'极度贪婪'}];
+  sLabels.forEach(l=>{
+    const lx=cx+(r+22)*Math.cos(l.a), ly=cy+(r+22)*Math.sin(l.a);
+    gx.font='9px "Noto Sans SC",sans-serif';
+    gx.fillStyle='rgba(216,228,240,0.35)';gx.textAlign='center';gx.textBaseline='middle';
+    gx.fillText(l.t,lx,ly);
+  });
+}
+drawGauge();
+
+// ── TIMELINE ─────────────────────────────────────────────────
+const tc = document.getElementById('timelineCanvas');
+const tx2 = tc.getContext('2d');
+
+function drawTimeline() {
+  tc.width = tc.offsetWidth;
+  const W=tc.width, H=tc.height;
+  tx2.clearRect(0,0,W,H);
+
+  const data=[42,38,51,44,28,22,18];
+  const days=['7天前','6天前','5天前','4天前','3天前','2天前','今天'];
+  const pad={l:36,r:12,t:10,b:22};
+  const cw=W-pad.l-pad.r, ch=H-pad.t-pad.b;
+
+  // threshold lines
+  [20,80].forEach(v=>{
+    const y=pad.t+ch*(1-v/100);
+    tx2.beginPath();tx2.moveTo(pad.l,y);tx2.lineTo(W-pad.r,y);
+    tx2.strokeStyle=v<50?'rgba(255,61,110,0.3)':'rgba(0,255,178,0.3)';
+    tx2.lineWidth=1;tx2.setLineDash([4,4]);tx2.stroke();tx2.setLineDash([]);
+    tx2.font='8px JetBrains Mono,monospace';
+    tx2.fillStyle=v<50?'rgba(255,61,110,0.6)':'rgba(0,255,178,0.6)';
+    tx2.textAlign='right';tx2.textBaseline='middle';
+    tx2.fillText(v,pad.l-4,y);
+  });
+
+  // y-axis labels
+  [0,50,100].forEach(v=>{
+    const y=pad.t+ch*(1-v/100);
+    tx2.font='8px JetBrains Mono,monospace';
+    tx2.fillStyle='rgba(216,228,240,0.25)';tx2.textAlign='right';tx2.textBaseline='middle';
+    tx2.fillText(v,pad.l-4,y);
+  });
+
+  // area fill
+  const pts=data.map((v,i)=>({x:pad.l+i*(cw/(data.length-1)),y:pad.t+ch*(1-v/100)}));
+  const grad=tx2.createLinearGradient(0,pad.t,0,pad.t+ch);
+  grad.addColorStop(0,'rgba(255,61,110,0.3)');grad.addColorStop(1,'rgba(255,61,110,0)');
+  tx2.beginPath();tx2.moveTo(pts[0].x,pts[0].y);
+  pts.slice(1).forEach(p=>tx2.lineTo(p.x,p.y));
+  tx2.lineTo(pts[pts.length-1].x,pad.t+ch);tx2.lineTo(pts[0].x,pad.t+ch);
+  tx2.closePath();tx2.fillStyle=grad;tx2.fill();
+
+  // line
+  tx2.beginPath();tx2.moveTo(pts[0].x,pts[0].y);
+  pts.slice(1).forEach(p=>tx2.lineTo(p.x,p.y));
+  tx2.strokeStyle='#FF3D6E';tx2.lineWidth=2;
+  tx2.shadowColor='#FF3D6E';tx2.shadowBlur=8;tx2.stroke();tx2.shadowBlur=0;
+
+  // dots
+  pts.forEach((p,i)=>{
+    tx2.beginPath();tx2.arc(p.x,p.y,3.5,0,Math.PI*2);
+    tx2.fillStyle=data[i]<=20?'#FF3D6E':data[i]>=80?'#00FFB2':'#FFB800';
+    tx2.shadowColor=tx2.fillStyle;tx2.shadowBlur=8;tx2.fill();tx2.shadowBlur=0;
+    // day label
+    tx2.font='8px JetBrains Mono,monospace';
+    tx2.fillStyle='rgba(216,228,240,0.35)';tx2.textAlign='center';tx2.textBaseline='top';
+    tx2.fillText(days[i],p.x,pad.t+ch+3);
+  });
+}
+drawTimeline();
+window.addEventListener('resize',drawTimeline);
+
+// ── CONTROLS ─────────────────────────────────────────────────
+function updateThreshold(type,val){
+  document.getElementById(type==='fear'?'fearTh':'greedTh').textContent=val;
+}
+
+// ── MODAL ────────────────────────────────────────────────────
+function showModal(){
+  document.getElementById('modalOverlay').classList.add('on');
+  document.getElementById('screenConfirm').style.display='block';
+  document.getElementById('screenExec').style.display='none';
+}
+function hideModal(e){
+  if(!e||e.target===document.getElementById('modalOverlay')){
+    document.getElementById('modalOverlay').classList.remove('on');
+    // reset exec screen
+    ['es1','es2','es3','es4','es5'].forEach(id=>{
+      const el=document.getElementById(id);
+      el.className='exec-step';
+      el.querySelector('.estep-icon').style.animation='';
+    });
+    document.getElementById('execResult').classList.remove('on');
+    ['es1tag','es2tag','es3tag','es4tag','es5tag'].forEach(id=>{
+      const el=document.getElementById(id);
+      el.className='etag etag-wait';el.textContent='等待中';
+    });
+    ['es1val','es2val','es3val','es4val','es5val'].forEach(id=>document.getElementById(id).textContent='');
+    document.getElementById('execTitle') && (document.getElementById('execTitle').textContent='');
+    document.getElementById('execSpinner').textContent='⟳';
+    document.getElementById('execSubtitle').textContent='OpenClaw 正在调用 Agent Trade Kit 工具链';
+  }
+}
+function startExec(){
+  document.getElementById('screenConfirm').style.display='none';
+  document.getElementById('screenExec').style.display='block';
+
+  const steps=[
+    {id:'es1',tag:'es1tag',val:'es1val', delay:0,   dur:900,  result:'可用余额: $61,240 USDT'},
+    {id:'es2',tag:'es2tag',val:'es2val', delay:1100, dur:700,  result:'BTC持仓: 0 · 可建仓'},
+    {id:'es3',tag:'es3tag',val:'es3val', delay:2000, dur:1100, result:'订单ID: #847291 · 已提交'},
+    {id:'es4',tag:'es4tag',val:'es4val', delay:3300, dur:800,  result:'止损单ID: #847292 · 已提交'},
+    {id:'es5',tag:'es5tag',val:'es5val', delay:4300, dur:600,  result:'两笔订单状态: live ✓'},
+  ];
+
+  steps.forEach(s=>{
+    // activate
+    setTimeout(()=>{
+      document.getElementById(s.id).className='exec-step active';
+      const tag=document.getElementById(s.tag);
+      tag.className='etag etag-atk';tag.textContent='ATK 执行中...';
+    }, s.delay);
+    // done
+    setTimeout(()=>{
+      document.getElementById(s.id).className='exec-step done';
+      const tag=document.getElementById(s.tag);
+      tag.className='etag etag-done';tag.textContent='✓ 完成';
+      document.getElementById(s.val).textContent=s.result;
+    }, s.delay+s.dur);
+  });
+
+  // all done
+  setTimeout(()=>{
+    document.getElementById('execSpinner').textContent='✓';
+    document.getElementById('execSubtitle').textContent='全部 ATK 工具调用完成 · 订单已成功挂单';
+    document.getElementById('execResult').classList.add('on');
+  }, 5200);
+}
+</script>
+</body>
+</html>
